@@ -7,15 +7,37 @@ const isDragging = shallowRef(false)
 const { dragItem, dragItemElement } = useDragItem()
 
 const pointer = usePointer()
+const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resumeElementByPointWatch } = useElementByPoint({
+  immediate: false,
+  x: pointer.x,
+  y: pointer.y,
+})
+
 const { pressed: isMouseDown } = useMousePressed({
   onReleased: () => {
     isDragging.value = false
+    pauseHoverWatch()
 
     onDragEnd()
 
     dragItem.value = null
     dragItemElement.value = null
   },
+})
+
+const lastHoveredDraggableElement = computed((prev) => {
+  const el = unrefElement(hoveredElement)
+  if (!el)
+    return null
+
+  if (!el.hasAttribute('data-draggable'))
+    return prev
+
+  return el
+})
+
+const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredElement, (el) => {
+  // console.log(el)
 })
 
 let dragUpdateCount = 0
@@ -30,6 +52,7 @@ const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.
   // on drag start
   if (dragUpdateCount >= DRAG_UPDATE_THRESHOLD) {
     pausePointerWatch()
+    resumeHoverWatch()
     dragUpdateCount = 0
     isDragging.value = true
     dragItem.value = potentialDragItem
@@ -49,9 +72,19 @@ function handlePointerDown(item: DragItem, element: any) {
 
   isMouseDown.value = true
   resumePointerWatch()
-  
+
   potentialDragItemElement = element
   potentialDragItem = item
+}
+
+function pauseHoverWatch() {
+  pauseElementByPointWatch()
+  pauseHoveredElementWatch()
+}
+
+function resumeHoverWatch() {
+  resumeElementByPointWatch()
+  resumeHoveredElementWatch()
 }
 
 function onDragStart() {
@@ -60,7 +93,6 @@ function onDragStart() {
     el.style.opacity = '0.5'
   }
 }
-
 function onDragEnd() {
   const el = unrefElement(dragItemElement)
   if (el) {
@@ -76,6 +108,7 @@ function onDragEnd() {
         v-for="item in list"
         :key="item"
         :data-drag-id="item"
+        data-draggable
         variant="soft"
         @pointerdown="handlePointerDown(item, $event.target)"
       >
