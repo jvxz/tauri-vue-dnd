@@ -25,22 +25,8 @@ const DRAG_UPDATE_THRESHOLD = 10
 
 export const useDraggableData = createGlobalState(() => {
   const validElements = new WeakMap<RendererNode, DragItem<unknown>>()
-
   const draggingItem = shallowRef<DragItem<unknown> | null>()
-
   const isDragging = shallowRef(false)
-
-  return {
-    draggingItem,
-    isDragging,
-    validElements,
-  }
-})
-
-export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
-  const { draggingItem, isDragging, validElements } = useDraggableData()
-
-  let barGap: string | null = null
 
   const pointer = useGlobalPointer()
   const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resumeElementByPointWatch } = useElementByPoint({
@@ -49,32 +35,56 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
     y: pointer.y,
   })
 
+  return {
+    draggingItem,
+    hoveredElement,
+    isDragging,
+    pauseElementByPointWatch,
+    resumeElementByPointWatch,
+    validElements,
+  }
+})
+
+export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
+  const {
+    draggingItem,
+    hoveredElement,
+    isDragging,
+    pauseElementByPointWatch,
+    resumeElementByPointWatch,
+    validElements,
+  } = useDraggableData()
+  const pointer = useGlobalPointer()
+
+  let barGap: string | null = null
+
   const dropTargetItem = computed<DragItem<T> | null>((prev) => {
     const el = unrefElement(hoveredElement)
     if (!el)
       return null
 
     const item = lookupElement(el)
-    if (!item)
+    if (!item || item.group !== options.group)
       return prev ?? null
 
-    return {
-      data: item.data,
-      element: el,
-    } satisfies DragItem<T>
+    return item
   })
 
   const { pressed: isMouseDown } = useMousePressed({
     onReleased: () => {
-      const wasDragging = isDragging.value
-      isDragging.value = false
       pauseHoverWatch()
 
-      if (wasDragging && draggingItem.value && dropTargetItem.value) {
+      if (
+        isDragging.value
+        && draggingItem.value
+        && dropTargetItem.value
+        && draggingItem.value?.group === options.group
+      ) {
         options.onDragEnd?.(createHookParams())
+        draggingItem.value = null
+        isDragging.value = false
       }
 
-      draggingItem.value = null
       barGap = null
     },
   })
@@ -83,14 +93,15 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
     if (!currentItem || !lookupElement(currentItem.element))
       return
 
-    options.onDragOver?.(createHookParams())
+    if (currentItem.group === options.group) {
+      options.onDragOver?.(createHookParams())
+    }
   })
 
   let dragUpdateCount = 0
   let potentialDraggingItem: DragItem<T> | null = null
   const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.x, pointer.y], () => {
     if (!isMouseDown.value || isDragging.value) {
-      console.error('paused because !isMouseDown.value || isDragging.value')
       return pausePointerWatch()
     }
 
@@ -126,16 +137,25 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
     potentialDraggingItem = {
       data,
       element,
+      group: options.group,
     }
   }
 
-  const barStyles = computed<StyleValue>(() => {
+  const barStyles = computed<StyleValue>((prev) => {
     if (!isDragging.value)
       return null
 
     const hoveredElement = dropTargetItem.value?.element
     if (!hoveredElement)
       return null
+
+    if (
+      draggingItem.value
+      && draggingItem.value.group
+      && draggingItem.value.group !== options.group
+    ) {
+      return prev
+    }
 
     const hoveredElementRect = hoveredElement.getBoundingClientRect()
     const relativePosition = pointer.y.value - hoveredElementRect.top
@@ -156,7 +176,7 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
         ? (hoveredElementRect.height + hoveredElementRect.top)
         : (hoveredElementRect.top)
 
-      const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap}/2)`
+      const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap} / 2)`
 
       return {
         top,
@@ -242,7 +262,7 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
   }
 }
 
-export function swapArrayMembers<T>(arr: T[], from: number, to: number) {
+export function moveArrayMember<T>(arr: T[], from: number, to: number) {
   const clone: T[] = [...arr]
   Array.prototype.splice.call(clone, to, 0, Array.prototype.splice.call(clone, from, 1)[0])
   return clone
