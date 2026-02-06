@@ -1,3 +1,4 @@
+import type { MaybeElementRef } from '@vueuse/core'
 import type { RendererNode, StyleValue, VNodeProps } from 'vue'
 
 export type DragData = number
@@ -45,7 +46,7 @@ export const useDraggableData = createGlobalState(() => {
   }
 })
 
-export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
+export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElementRef>, options: Options<T> = {}) {
   const {
     draggingItem,
     hoveredElement,
@@ -147,6 +148,9 @@ export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
 
     const hoveredElement = dropTargetItem.value?.element
     if (!hoveredElement)
+      return null
+
+    if (!document.elementsFromPoint(pointer.x.value, pointer.y.value).includes(unrefElement(toValue(container))!))
       return null
 
     if (

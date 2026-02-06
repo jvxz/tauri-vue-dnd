@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 const list = shallowRef<DragData[]>([1, 2, 3, 4, 5, 6, 7])
 
-const { barStyles, getDragElementProps } = useDraggable(list, {
+const container = useTemplateRef('container')
+
+
+const { barStyles, getDragElementProps } = useDraggable(list, container, {
   group: '1',
   onDragEnd: (params) => {
     if (!params.targetIdx && params.targetIdx !== 0)
@@ -15,7 +18,7 @@ const { barStyles, getDragElementProps } = useDraggable(list, {
 </script>
 
 <template>
-  <div class="flex w-[100px] flex-col gap-1">
+  <div class="flex w-[100px] flex-col gap-1" ref="container">
     <div
       v-if="barStyles"
       class="pointer-events-none absolute z-10 h-px w-full bg-red-500"
