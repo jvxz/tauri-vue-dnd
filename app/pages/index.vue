@@ -5,6 +5,7 @@ const { barStyles, getDragElementProps, isDragging } = useDraggable(list, {
   onDragEnd: (params) => {
     if (!params.targetIdx && params.targetIdx !== 0)
       return
+
     list.value = swapArrayMembers(list.value, params.prevIdx, params.targetIdx)
   },
 })

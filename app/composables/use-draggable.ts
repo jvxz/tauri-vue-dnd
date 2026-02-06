@@ -1,52 +1,67 @@
 import type { RendererNode, StyleValue, VNodeProps } from 'vue'
 
 export type DragData = number
-export interface DraggingItem<T> {
+export interface DragItem<T> {
   data: T
-  element: HTMLElement
+  element: Element
+  group?: string
 }
 
 interface HookParams<T> {
   prevIdx: number
   targetIdx: number | null
-  targetItem: DraggingItem<T> | null
-  prevItem: DraggingItem<T>
+  targetItem: DragItem<T> | null
+  prevItem: DragItem<T>
 }
 
-type Hooks<T> = Partial<{
-  onDragStart: (draggingItem: DraggingItem<T>) => void
+type Options<T> = Partial<{
+  onDragStart: (draggingItem: DragItem<T>) => void
   onDragEnd: (params: HookParams<T>) => void
   onDragOver: (params: HookParams<T>) => void
+  group: string
 }>
 
 const DRAG_UPDATE_THRESHOLD = 10
-export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
+
+export const useDraggableData = createGlobalState(() => {
+  const validElements = new WeakMap<RendererNode, DragItem<unknown>>()
+
+  const draggingItem = shallowRef<DragItem<unknown> | null>()
+
   const isDragging = shallowRef(false)
-  const draggingItem = shallowRef<T | null>(null)
-  const validDraggableElements = shallowRef(new WeakMap<RendererNode, T>())
+
+  return {
+    draggingItem,
+    isDragging,
+    validElements,
+  }
+})
+
+export function useDraggable<T>(list: Ref<T[]>, options: Options<T> = {}) {
+  const { draggingItem, isDragging, validElements } = useDraggableData()
 
   let barGap: string | null = null
 
-  const pointer = usePointer()
+  const pointer = useGlobalPointer()
   const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resumeElementByPointWatch } = useElementByPoint({
     immediate: false,
     x: pointer.x,
     y: pointer.y,
   })
 
-  const dropTargetItem = computed<DraggingItem<T> | null>((prev) => {
+  const dropTargetItem = computed<DragItem<T> | null>((prev) => {
     const el = unrefElement(hoveredElement)
     if (!el)
       return null
 
-    const data = validDraggableElements.value.get(el)
-    if (!data)
+    const item = lookupElement(el)
+    if (!item)
       return prev ?? null
 
     return {
-      data,
+      data: item.data,
       element: el,
-    }
+    } satisfies DragItem<T>
   })
 
   const { pressed: isMouseDown } = useMousePressed({
@@ -56,7 +71,7 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
       pauseHoverWatch()
 
       if (wasDragging && draggingItem.value && dropTargetItem.value) {
-        hooks.onDragEnd?.(createHookParams())
+        options.onDragEnd?.(createHookParams())
       }
 
       draggingItem.value = null
@@ -65,17 +80,24 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
   })
 
   const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(dropTargetItem, (currentItem) => {
-    if (!currentItem || !validDraggableElements.value.has(currentItem.element))
+    if (!currentItem || !lookupElement(currentItem.element))
       return
 
-    hooks.onDragOver?.(createHookParams())
+    options.onDragOver?.(createHookParams())
   })
 
   let dragUpdateCount = 0
-  let potentialDraggingItem: DraggingItem<T> | null = null
+  let potentialDraggingItem: DragItem<T> | null = null
   const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.x, pointer.y], () => {
-    if (!isMouseDown.value || isDragging.value)
+    if (!isMouseDown.value || isDragging.value) {
+      console.error('paused because !isMouseDown.value || isDragging.value')
       return pausePointerWatch()
+    }
+
+    if (!potentialDraggingItem) {
+      console.error('paused because no potential dragging item in variable')
+      return pausePointerWatch()
+    }
 
     dragUpdateCount++
 
@@ -84,10 +106,11 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
       resumeHoverWatch()
       dragUpdateCount = 0
       isDragging.value = true
-      draggingItem.value = potentialDraggingItem
-      potentialDraggingItem = null
 
-      hooks.onDragStart?.(draggingItem.value)
+      draggingItem.value = potentialDraggingItem
+      options.onDragStart?.(potentialDraggingItem)
+
+      potentialDraggingItem = null
     }
   }, {
     immediate: false,
@@ -128,7 +151,7 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
       ? hoveredElement.nextElementSibling
       : hoveredElement.previousElementSibling
 
-    if (!siblingElement || !validDraggableElements.value.has(siblingElement)) {
+    if (!siblingElement || !lookupElement(siblingElement)) {
       const topValue = half === 'bottom'
         ? (hoveredElementRect.height + hoveredElementRect.top)
         : (hoveredElementRect.top)
@@ -166,8 +189,12 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
   }
 
   const getDragElementProps = (data: T) => {
-    const onVnodeMounted: VNodeProps['onVnodeMounted'] = e => e.el && validDraggableElements.value.set(e.el, data)
-    const onVnodeUnmounted: VNodeProps['onVnodeUnmounted'] = e => e.el && validDraggableElements.value.delete(e.el)
+    const onVnodeMounted: VNodeProps['onVnodeMounted'] = e => e.el && e.el instanceof Element && validElements.set(e.el, {
+      data,
+      element: e.el,
+      group: options.group,
+    })
+    const onVnodeUnmounted: VNodeProps['onVnodeUnmounted'] = e => e.el && validElements.delete(e.el)
     const onPointerdown = (event: any) => handlePointerDown(data, event.target)
 
     return {
@@ -178,16 +205,33 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
   }
 
   function createHookParams(): HookParams<T> {
-    if (!dropTargetItem.value) {
-      throw new Error('Attempted to make hook params when dropTargetItem was undefined')
+    const targetItem = lookupElement(dropTargetItem.value?.element ?? null)
+    if (!dropTargetItem.value || !targetItem) {
+      throw new Error('Attempted to make hook params when targetItem was undefined')
+    }
+
+    const prevItem = lookupElement(draggingItem.value?.element ?? null)
+    if (!draggingItem.value || !prevItem) {
+      throw new Error('Attempted to make hook params when prevItem was undefined')
     }
 
     return {
-      prevIdx: list.value.indexOf(draggingItem.value.data),
-      prevItem: dropTargetItem.value,
-      targetIdx: list.value.indexOf(dropTargetItem.value.data),
-      targetItem: draggingItem.value,
+      prevIdx: list.value.indexOf(prevItem.data),
+      prevItem,
+      targetIdx: list.value.indexOf(targetItem.data),
+      targetItem,
     }
+  }
+
+  function lookupElement(el: DragItem<T>['element'] | null): DragItem<T> | null {
+    if (!el)
+      return null
+
+    const data = validElements.get(el)
+    if (!data)
+      return null
+
+    return data as DragItem<T>
   }
 
   return {
