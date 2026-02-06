@@ -1,7 +1,7 @@
 import type { RendererNode, StyleValue, VNodeProps } from 'vue'
 
 export type DragData = number
-export interface DragItem<T> {
+export interface DraggingItem<T> {
   data: T
   element: HTMLElement
 }
@@ -9,12 +9,12 @@ export interface DragItem<T> {
 interface HookParams<T> {
   prevIdx: number
   targetIdx: number | null
-  targetItem: DragItem<T> | null
-  prevItem: DragItem<T>
+  targetItem: DraggingItem<T> | null
+  prevItem: DraggingItem<T>
 }
 
 type Hooks<T> = Partial<{
-  onDragStart: (draggedItem: DragItem<T>) => void
+  onDragStart: (draggingItem: DraggingItem<T>) => void
   onDragEnd: (params: HookParams<T>) => void
   onDragOver: (params: HookParams<T>) => void
 }>
@@ -22,9 +22,10 @@ type Hooks<T> = Partial<{
 const DRAG_UPDATE_THRESHOLD = 10
 export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
   const isDragging = shallowRef(false)
-
-  const dragItem = shallowRef<T | null>(null)
+  const draggingItem = shallowRef<T | null>(null)
   const validDraggableElements = shallowRef(new WeakMap<RendererNode, T>())
+
+  let barGap: string | null = null
 
   const pointer = usePointer()
   const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resumeElementByPointWatch } = useElementByPoint({
@@ -33,7 +34,7 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
     y: pointer.y,
   })
 
-  const hoveredDraggableItem = computed<DragItem<T> | null>((prev) => {
+  const dropTargetItem = computed<DraggingItem<T> | null>((prev) => {
     const el = unrefElement(hoveredElement)
     if (!el)
       return null
@@ -50,32 +51,28 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
 
   const { pressed: isMouseDown } = useMousePressed({
     onReleased: () => {
-      if (!isDragging.value || !dragItem.value || !hoveredDraggableItem.value)
-        return
-
+      const wasDragging = isDragging.value
       isDragging.value = false
       pauseHoverWatch()
 
-      hooks.onDragEnd?.({
-        prevIdx: list.value.indexOf(dragItem.value.data),
-        prevItem: hoveredDraggableItem.value,
-        targetIdx: list.value.indexOf(hoveredDraggableItem.value.data),
-        targetItem: dragItem.value,
-      })
+      if (wasDragging && draggingItem.value && dropTargetItem.value) {
+        hooks.onDragEnd?.(createHookParams())
+      }
 
-      dragItem.value = null
+      draggingItem.value = null
+      barGap = null
     },
   })
 
-  const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredDraggableItem, (currentItem) => {
+  const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(dropTargetItem, (currentItem) => {
     if (!currentItem || !validDraggableElements.value.has(currentItem.element))
       return
 
-    hooks.onDragOver?.(makeHookParams())
+    hooks.onDragOver?.(createHookParams())
   })
 
   let dragUpdateCount = 0
-  let potentialDragItem: DragItem<T> | null = null
+  let potentialDraggingItem: DraggingItem<T> | null = null
   const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.x, pointer.y], () => {
     if (!isMouseDown.value || isDragging.value)
       return pausePointerWatch()
@@ -87,10 +84,10 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
       resumeHoverWatch()
       dragUpdateCount = 0
       isDragging.value = true
-      dragItem.value = potentialDragItem
-      potentialDragItem = null
+      draggingItem.value = potentialDraggingItem
+      potentialDraggingItem = null
 
-      hooks.onDragStart?.(dragItem.value)
+      hooks.onDragStart?.(draggingItem.value)
     }
   }, {
     immediate: false,
@@ -103,18 +100,17 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
     isMouseDown.value = true
     resumePointerWatch()
 
-    potentialDragItem = {
+    potentialDraggingItem = {
       data,
       element,
     }
   }
 
-  let gap: string | null = null
   const barStyles = computed<StyleValue>(() => {
     if (!isDragging.value)
       return null
 
-    const hoveredElement = hoveredDraggableItem.value?.element
+    const hoveredElement = dropTargetItem.value?.element
     if (!hoveredElement)
       return null
 
@@ -124,8 +120,8 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
     const half = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
 
     const parentElement = hoveredElement.parentElement
-    if (parentElement && !gap) {
-      gap = getComputedStyle(parentElement).gap
+    if (parentElement && !barGap) {
+      barGap = getComputedStyle(parentElement).gap
     }
 
     const siblingElement = half === 'bottom'
@@ -137,7 +133,7 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
         ? (hoveredElementRect.height + hoveredElementRect.top)
         : (hoveredElementRect.top)
 
-      const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${gap}/2)`
+      const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap}/2)`
 
       return {
         top,
@@ -181,22 +177,22 @@ export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
     }
   }
 
-  function makeHookParams(): HookParams<T> {
-    if (!hoveredDraggableItem.value) {
-      throw new Error('Attempted to make hook params when hoveredDraggableItem was undefined')
+  function createHookParams(): HookParams<T> {
+    if (!dropTargetItem.value) {
+      throw new Error('Attempted to make hook params when dropTargetItem was undefined')
     }
 
     return {
-      prevIdx: list.value.indexOf(dragItem.value.data),
-      prevItem: hoveredDraggableItem.value,
-      targetIdx: list.value.indexOf(hoveredDraggableItem.value.data),
-      targetItem: dragItem.value,
+      prevIdx: list.value.indexOf(draggingItem.value.data),
+      prevItem: dropTargetItem.value,
+      targetIdx: list.value.indexOf(dropTargetItem.value.data),
+      targetItem: draggingItem.value,
     }
   }
 
   return {
     barStyles,
-    dragItem,
+    draggingItem,
     getDragElementProps,
     isDragging,
   }
