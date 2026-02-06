@@ -1,11 +1,13 @@
-export type DragItem = number
+export type DragData = number
+export interface DragItem {
+  data: DragData
+  element: HTMLElement
+}
 
 export const useDragItem = createGlobalState(() => {
   const dragItem = shallowRef<DragItem | null>(null)
-  const dragItemElement = shallowRef<HTMLElement | null>(null)
 
   return {
     dragItem,
-    dragItemElement,
   }
 })

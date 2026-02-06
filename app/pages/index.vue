@@ -1,10 +1,14 @@
 <script lang="ts" setup>
+import type { RendererNode } from 'vue'
+
 const DRAG_UPDATE_THRESHOLD = 10
-const list = shallowRef<DragItem[]>([1, 2, 3, 4, 5, 6, 7])
+const list = shallowRef<DragData[]>([1, 2, 3, 4, 5, 6, 7])
+
+const validDraggableElements = shallowRef(new WeakMap<RendererNode, DragData>())
 
 const isDragging = shallowRef(false)
 
-const { dragItem, dragItemElement } = useDragItem()
+const { dragItem } = useDragItem()
 
 const pointer = usePointer()
 const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resumeElementByPointWatch } = useElementByPoint({
@@ -21,28 +25,33 @@ const { pressed: isMouseDown } = useMousePressed({
     onDragEnd()
 
     dragItem.value = null
-    dragItemElement.value = null
   },
 })
 
-const lastHoveredDraggableElement = computed((prev) => {
+const lastHoveredDraggableItem = computed<DragItem | null>((prev) => {
   const el = unrefElement(hoveredElement)
   if (!el)
     return null
 
-  if (!el.hasAttribute('data-draggable'))
-    return prev
+  const data = validDraggableElements.value.get(el)
+  if (!data)
+    return prev ?? null
 
-  return el
+  return {
+    data,
+    element: el,
+  }
 })
 
-const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredElement, (el) => {
-  // console.log(el)
+const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(lastHoveredDraggableItem, (currentItem, prevItem) => {
+  if (!currentItem || !validDraggableElements.value.has(currentItem))
+    return
+
+  onDragOver(currentItem, prevItem)
 })
 
 let dragUpdateCount = 0
 let potentialDragItem: DragItem | null = null
-let potentialDragItemElement: HTMLElement | null = null
 const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.x, pointer.y], () => {
   if (!isMouseDown.value || isDragging.value)
     return pausePointerWatch()
@@ -56,9 +65,7 @@ const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.
     dragUpdateCount = 0
     isDragging.value = true
     dragItem.value = potentialDragItem
-    dragItemElement.value = potentialDragItemElement
     potentialDragItem = null
-    potentialDragItemElement = null
 
     onDragStart()
   }
@@ -66,15 +73,17 @@ const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.
   immediate: false,
 })
 
-function handlePointerDown(item: DragItem, element: any) {
+function handlePointerDown(data: DragData, element: any) {
   if (!(element instanceof HTMLElement))
     return
 
   isMouseDown.value = true
   resumePointerWatch()
 
-  potentialDragItemElement = element
-  potentialDragItem = item
+  potentialDragItem = {
+    data,
+    element,
+  }
 }
 
 function pauseHoverWatch() {
@@ -88,16 +97,17 @@ function resumeHoverWatch() {
 }
 
 function onDragStart() {
-  const el = unrefElement(dragItemElement)
-  if (el) {
-    el.style.opacity = '0.5'
+  if (dragItem.value) {
+    dragItem.value.element.style.opacity = '0.5'
   }
 }
 function onDragEnd() {
-  const el = unrefElement(dragItemElement)
-  if (el) {
-    el.style.opacity = '1'
+  if (dragItem.value) {
+    dragItem.value.element.style.opacity = '1'
   }
+}
+function onDragOver(currentItem: DragItem, prevItem: DragItem | null) {
+  console.log('currentItem: ', currentItem)
 }
 </script>
 
@@ -107,15 +117,15 @@ function onDragEnd() {
       <UButton
         v-for="item in list"
         :key="item"
-        :data-drag-id="item"
-        data-draggable
         variant="soft"
         @pointerdown="handlePointerDown(item, $event.target)"
+        @vue:mounted="(e) => e.el && validDraggableElements.set(e.el, item)"
+        @vue:unmounted="e => e.el && validDraggableElements.delete(e.el)"
       >
         Item {{ item }}
       </UButton>
     </div>
-    <pre>{{ dragItem }}</pre>
+    <pre>{{ dragItem?.data }}</pre>
   </div>
 </template>
 
