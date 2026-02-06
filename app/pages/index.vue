@@ -17,8 +17,6 @@ const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resume
   y: pointer.y,
 })
 
-const pointerInElement = useMouseInElement()
-
 const { pressed: isMouseDown } = useMousePressed({
   onReleased: () => {
     isDragging.value = false
@@ -60,7 +58,6 @@ const { pause: pausePointerWatch, resume: resumePointerWatch } = watch([pointer.
 
   dragUpdateCount++
 
-  // on drag start
   if (dragUpdateCount >= DRAG_UPDATE_THRESHOLD) {
     pausePointerWatch()
     resumeHoverWatch()
@@ -89,18 +86,35 @@ function handlePointerDown(data: DragData, element: any) {
 }
 
 const barStyles = computed<StyleValue>(() => {
-  const el = hoveredDraggableItem.value?.element
-  if (!el)
+  if (!isDragging.value)
     return null
 
-  const elementRect = el.getBoundingClientRect()
-  const relativePosition = pointer.y.value - elementRect.top
+  const hoveredElement = hoveredDraggableItem.value?.element
+  if (!hoveredElement)
+    return null
 
-  const half = relativePosition > elementRect.height / 2 ? 'bottom' : 'top'
+  const hoveredElementRect = hoveredElement.getBoundingClientRect()
+  const relativePosition = pointer.y.value - hoveredElementRect.top
 
+  const half = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
+
+  const siblingElement = half === 'bottom'
+    ? hoveredElement.nextElementSibling ?? hoveredElement.previousElementSibling
+    : hoveredElement.previousElementSibling ?? hoveredElement.nextElementSibling
+  if (!siblingElement)
+    return null
+
+  const siblingElementRect = siblingElement.getBoundingClientRect()
+
+  const top = half === 'bottom'
+  ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
+  : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
+  
+  console.log('top: ', top);
   return {
-    top: `${half === 'bottom' ? elementRect.height + elementRect.top : elementRect.top}px`,
-    width: `${pointerInElement.elementWidth.value}px`,
+    top: `${top}px`,
+    // top: `${half === 'bottom' ? hoveredElementRect.height + hoveredElementRect.top : hoveredElementRect.top}px`,
+    width: `${hoveredElementRect.width}px`,
   }
 })
 
