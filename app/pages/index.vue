@@ -1,7 +1,13 @@
 <script lang="ts" setup>
 const list = shallowRef<DragData[]>([1, 2, 3, 4, 5, 6, 7])
 
-const { barStyles, getDragElementProps, isDragging } = useDraggable(list)
+const { barStyles, getDragElementProps, isDragging } = useDraggable(list, {
+  onDragEnd: (params) => {
+    if (!params.targetIdx && params.targetIdx !== 0)
+      return
+    list.value = swapArrayMembers(list.value, params.prevIdx, params.targetIdx)
+  },
+})
 </script>
 
 <template>

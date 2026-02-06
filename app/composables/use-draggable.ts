@@ -6,9 +6,21 @@ export interface DragItem<T> {
   element: HTMLElement
 }
 
-const DRAG_UPDATE_THRESHOLD = 10
+interface HookParams<T> {
+  prevIdx: number
+  targetIdx: number | null
+  targetItem: DragItem<T> | null
+  prevItem: DragItem<T>
+}
 
-export function useDraggable<T>(list: Ref<T[]>) {
+type Hooks<T> = Partial<{
+  onDragStart: (draggedItem: DragItem<T>) => void
+  onDragEnd: (params: HookParams<T>) => void
+  onDragOver: (params: HookParams<T>) => void
+}>
+
+const DRAG_UPDATE_THRESHOLD = 10
+export function useDraggable<T>(list: Ref<T[]>, hooks: Hooks<T> = {}) {
   const isDragging = shallowRef(false)
 
   const dragItem = shallowRef<T | null>(null)
@@ -44,7 +56,7 @@ export function useDraggable<T>(list: Ref<T[]>) {
       isDragging.value = false
       pauseHoverWatch()
 
-      onDragEnd({
+      hooks.onDragEnd?.({
         prevIdx: list.value.indexOf(dragItem.value.data),
         prevItem: hoveredDraggableItem.value,
         targetIdx: list.value.indexOf(hoveredDraggableItem.value.data),
@@ -55,11 +67,11 @@ export function useDraggable<T>(list: Ref<T[]>) {
     },
   })
 
-  const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredDraggableItem, (currentItem, prevItem) => {
+  const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredDraggableItem, (currentItem) => {
     if (!currentItem || !validDraggableElements.value.has(currentItem.element))
       return
 
-    onDragOver(currentItem, prevItem)
+    hooks.onDragOver?.(makeHookParams())
   })
 
   let dragUpdateCount = 0
@@ -78,7 +90,7 @@ export function useDraggable<T>(list: Ref<T[]>) {
       dragItem.value = potentialDragItem
       potentialDragItem = null
 
-      onDragStart()
+      hooks.onDragStart?.(dragItem.value)
     }
   }, {
     immediate: false,
@@ -157,27 +169,6 @@ export function useDraggable<T>(list: Ref<T[]>) {
     resumeHoveredElementWatch()
   }
 
-  function onDragStart() {
-    if (dragItem.value) {
-      dragItem.value.element.style.opacity = '0.5'
-    }
-  }
-  function onDragEnd(params: {
-    prevIdx: number
-    targetIdx: number
-    targetItem: DragItem<T>
-    prevItem: DragItem<T>
-  }) {
-    list.value = swapArrayMembers(list.value, params.prevIdx, params.targetIdx)
-  }
-
-  function onDragOver(currentItem: DragItem<T>, prevItem: DragItem<T> | null) {
-
-  }
-  function onMouseMove() {
-
-  }
-
   const getDragElementProps = (data: T) => {
     const onVnodeMounted: VNodeProps['onVnodeMounted'] = e => e.el && validDraggableElements.value.set(e.el, data)
     const onVnodeUnmounted: VNodeProps['onVnodeUnmounted'] = e => e.el && validDraggableElements.value.delete(e.el)
@@ -190,6 +181,19 @@ export function useDraggable<T>(list: Ref<T[]>) {
     }
   }
 
+  function makeHookParams(): HookParams<T> {
+    if (!hoveredDraggableItem.value) {
+      throw new Error('Attempted to make hook params when hoveredDraggableItem was undefined')
+    }
+
+    return {
+      prevIdx: list.value.indexOf(dragItem.value.data),
+      prevItem: hoveredDraggableItem.value,
+      targetIdx: list.value.indexOf(hoveredDraggableItem.value.data),
+      targetItem: dragItem.value,
+    }
+  }
+
   return {
     barStyles,
     dragItem,
@@ -198,7 +202,7 @@ export function useDraggable<T>(list: Ref<T[]>) {
   }
 }
 
-function swapArrayMembers<T>(arr: T[], from: number, to: number) {
+export function swapArrayMembers<T>(arr: T[], from: number, to: number) {
   const clone: T[] = [...arr]
   Array.prototype.splice.call(clone, to, 0, Array.prototype.splice.call(clone, from, 1)[0])
   return clone
