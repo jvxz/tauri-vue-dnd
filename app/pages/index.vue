@@ -17,17 +17,6 @@ const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resume
   y: pointer.y,
 })
 
-const { pressed: isMouseDown } = useMousePressed({
-  onReleased: () => {
-    isDragging.value = false
-    pauseHoverWatch()
-
-    onDragEnd()
-
-    dragItem.value = null
-  },
-})
-
 const hoveredDraggableItem = computed<DragItem | null>((prev) => {
   const el = unrefElement(hoveredElement)
   if (!el)
@@ -41,6 +30,25 @@ const hoveredDraggableItem = computed<DragItem | null>((prev) => {
     data,
     element: el,
   }
+})
+
+const { pressed: isMouseDown } = useMousePressed({
+  onReleased: () => {
+    if (!isDragging.value || !dragItem.value || !hoveredDraggableItem.value)
+      return
+
+    isDragging.value = false
+    pauseHoverWatch()
+
+    onDragEnd({
+      prevIdx: list.value.indexOf(dragItem.value.data),
+      prevItem: hoveredDraggableItem.value,
+      targetIdx: list.value.indexOf(hoveredDraggableItem.value.data),
+      targetItem: dragItem.value,
+    })
+
+    dragItem.value = null
+  },
 })
 
 const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredDraggableItem, (currentItem, prevItem) => {
@@ -150,10 +158,13 @@ function onDragStart() {
     dragItem.value.element.style.opacity = '0.5'
   }
 }
-function onDragEnd() {
-  if (dragItem.value) {
-    dragItem.value.element.style.opacity = '1'
-  }
+function onDragEnd(params: {
+  prevIdx: number
+  targetIdx: number
+  targetItem: DragItem
+  prevItem: DragItem
+}) {
+  list.value = swapArrayMembers(list.value, params.prevIdx, params.targetIdx)
 }
 
 function onDragOver(currentItem: DragItem, prevItem: DragItem | null) {
@@ -162,6 +173,12 @@ function onDragOver(currentItem: DragItem, prevItem: DragItem | null) {
 function onMouseMove() {
 
 }
+
+function swapArrayMembers<T>(arr: T[], from: number, to: number) {
+  const clone: T[] = [...arr]
+  Array.prototype.splice.call(clone, to, 0, Array.prototype.splice.call(clone, from, 1)[0])
+  return clone
+};
 </script>
 
 <template>
