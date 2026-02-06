@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { RendererNode } from 'vue'
+import type { RendererNode, StyleValue } from 'vue'
 
 const DRAG_UPDATE_THRESHOLD = 10
 const list = shallowRef<DragData[]>([1, 2, 3, 4, 5, 6, 7])
@@ -17,6 +17,8 @@ const { element: hoveredElement, pause: pauseElementByPointWatch, resume: resume
   y: pointer.y,
 })
 
+const pointerInElement = useMouseInElement()
+
 const { pressed: isMouseDown } = useMousePressed({
   onReleased: () => {
     isDragging.value = false
@@ -28,7 +30,7 @@ const { pressed: isMouseDown } = useMousePressed({
   },
 })
 
-const lastHoveredDraggableItem = computed<DragItem | null>((prev) => {
+const hoveredDraggableItem = computed<DragItem | null>((prev) => {
   const el = unrefElement(hoveredElement)
   if (!el)
     return null
@@ -43,8 +45,8 @@ const lastHoveredDraggableItem = computed<DragItem | null>((prev) => {
   }
 })
 
-const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(lastHoveredDraggableItem, (currentItem, prevItem) => {
-  if (!currentItem || !validDraggableElements.value.has(currentItem))
+const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(hoveredDraggableItem, (currentItem, prevItem) => {
+  if (!currentItem || !validDraggableElements.value.has(currentItem.element))
     return
 
   onDragOver(currentItem, prevItem)
@@ -86,6 +88,22 @@ function handlePointerDown(data: DragData, element: any) {
   }
 }
 
+const barStyles = computed<StyleValue>(() => {
+  const el = hoveredDraggableItem.value?.element
+  if (!el)
+    return null
+
+  const elementRect = el.getBoundingClientRect()
+  const relativePosition = pointer.y.value - elementRect.top
+
+  const half = relativePosition > elementRect.height / 2 ? 'bottom' : 'top'
+
+  return {
+    top: `${half === 'bottom' ? elementRect.height + elementRect.top : elementRect.top}px`,
+    width: `${pointerInElement.elementWidth.value}px`,
+  }
+})
+
 function pauseHoverWatch() {
   pauseElementByPointWatch()
   pauseHoveredElementWatch()
@@ -106,14 +124,19 @@ function onDragEnd() {
     dragItem.value.element.style.opacity = '1'
   }
 }
+
 function onDragOver(currentItem: DragItem, prevItem: DragItem | null) {
-  console.log('currentItem: ', currentItem)
+
+}
+function onMouseMove() {
+
 }
 </script>
 
 <template>
   <div class="flex h-screen items-center justify-center">
     <div class="flex w-[100px] flex-col gap-1">
+      <div class="pointer-events-none absolute z-10 h-px w-full bg-red-500" :style="barStyles"></div>
       <UButton
         v-for="item in list"
         :key="item"
