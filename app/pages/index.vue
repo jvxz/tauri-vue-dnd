@@ -85,6 +85,7 @@ function handlePointerDown(data: DragData, element: any) {
   }
 }
 
+let gap: string | null = null
 const barStyles = computed<StyleValue>(() => {
   if (!isDragging.value)
     return null
@@ -98,22 +99,38 @@ const barStyles = computed<StyleValue>(() => {
 
   const half = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
 
+  const parentElement = hoveredElement.parentElement
+  if (parentElement && !gap) {
+    gap = getComputedStyle(parentElement).gap
+  }
+
   const siblingElement = half === 'bottom'
-    ? hoveredElement.nextElementSibling ?? hoveredElement.previousElementSibling
-    : hoveredElement.previousElementSibling ?? hoveredElement.nextElementSibling
-  if (!siblingElement)
-    return null
+    ? hoveredElement.nextElementSibling
+    : hoveredElement.previousElementSibling
+
+  if (!siblingElement || !validDraggableElements.value.has(siblingElement)) {
+    const topValue = half === 'bottom'
+      ? (hoveredElementRect.height + hoveredElementRect.top)
+      : (hoveredElementRect.top)
+
+    const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${gap}/2)`
+
+    return {
+      top,
+      width: `${hoveredElementRect.width}px`,
+    }
+  }
 
   const siblingElementRect = siblingElement.getBoundingClientRect()
 
-  const top = half === 'bottom'
-  ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
-  : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
-  
-  console.log('top: ', top);
+  const topValue = half === 'bottom'
+    ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
+    : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
+
+  const top = `${topValue}px`
+
   return {
-    top: `${top}px`,
-    // top: `${half === 'bottom' ? hoveredElementRect.height + hoveredElementRect.top : hoveredElementRect.top}px`,
+    top,
     width: `${hoveredElementRect.width}px`,
   }
 })
@@ -150,7 +167,11 @@ function onMouseMove() {
 <template>
   <div class="flex h-screen items-center justify-center">
     <div class="flex w-[100px] flex-col gap-1">
-      <div class="pointer-events-none absolute z-10 h-px w-full bg-red-500" :style="barStyles"></div>
+      <div
+        v-if="isDragging"
+        class="pointer-events-none absolute z-10 h-px w-full bg-red-500"
+        :style="barStyles"
+      ></div>
       <UButton
         v-for="item in list"
         :key="item"
@@ -162,7 +183,7 @@ function onMouseMove() {
         Item {{ item }}
       </UButton>
     </div>
-    <pre>{{ dragItem?.data }}</pre>
+    <!-- <pre>{{ dragItem?.data }}</pre> -->
   </div>
 </template>
 
@@ -174,5 +195,6 @@ function onMouseMove() {
   -webkit-user-drag: none;
   -webkit-app-region: no-drag;
   cursor: default;
+  font-size: calc();
 }
 </style>
