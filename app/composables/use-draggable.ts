@@ -98,19 +98,9 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     pauseHoverWatch()
     barGap = null
 
-    // console.log('_____________________group,', options.group)
-    // console.log('isDragging.value: ', isDragging.value)
-    // console.log('draggingItem.value: ', draggingItem.value)
-    // console.log('dropTargetItem.value: ', dropTargetItem.value)
-    // console.log('draggingItem.value?.group: ', draggingItem.value?.group)
-    // console.log('options.group: ', options.group)
-    // console.log('listId: ', listId)
-    // console.log('dropTargetItem.value._listId: ', dropTargetItem.value?._listId)
-
     const draggedFromList = draggingItem.value?._listId === listId
     const draggedToList = dropTargetItem.value?._listId === listId
     const isFromSameGroup = draggingItem.value?.group === options.group || dropTargetItem.value?.group === options.group
-    // console.log('isDragging.value: ', isDragging.value, options._name)
 
     if (
       isDragging.value
@@ -120,10 +110,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       && (draggedFromList || draggedToList)
     ) {
       options.onDragEnd?.(createHookParams())
-      // draggingItem.value = null
     }
-
-    // isDragging.value = false
   })
 
   const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(dropTargetItem, (currentItem) => {
@@ -340,7 +327,7 @@ export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef
     return list
 
   // handle moving to different list (remove)
-  if (params.targetIdx === -1) {
+  if (params.prevIdx !== -1 && params.prevItem._listId !== params.targetItem._listId) {
     const arr = list
     arr.splice(params.prevIdx, 1)
     return arr
