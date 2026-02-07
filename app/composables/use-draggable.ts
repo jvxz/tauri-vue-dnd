@@ -319,7 +319,12 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
   }
 }
 
-export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef: MaybeRefOrGetter<HookParams<T>>) {
+type Filter = () => boolean | boolean
+export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef: MaybeRefOrGetter<HookParams<T>>, filters: {
+  doRemoval?: Filter
+  doMoving?: Filter
+  doAdding?: Filter
+} = {}) {
   const list = toValue(listRef)
   const params = toValue(paramsRef)
 
@@ -328,6 +333,9 @@ export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef
 
   // handle moving to different list (remove)
   if (params.prevIdx !== -1 && params.prevItem._listId !== params.targetItem._listId) {
+    if (!check(filters.doRemoval))
+      return list
+
     const arr = list
     arr.splice(params.prevIdx, 1)
     return arr
@@ -335,10 +343,21 @@ export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef
 
   // handle recieving from different list (add at index)
   if (params.prevIdx === -1) {
-    return insertAt(list, params.targetIdx, params.prevItem.data)
+    return check(filters.doAdding) ? insertAt(list, params.targetIdx, params.prevItem.data) : list
   }
 
-  return moveArrayMember(list, params.prevIdx, params.targetIdx)
+  return check(filters.doMoving) ? moveArrayMember(list, params.prevIdx, params.targetIdx) : list
+
+  function check(f: Filter | undefined): boolean {
+    if (!f)
+      return true
+
+    if (typeof f === 'function') {
+      return f()
+    }
+
+    return f
+  }
 }
 
 export function moveArrayMember<T>(arr: T[], from: number, to: number) {
