@@ -28,7 +28,7 @@ const DRAG_UPDATE_THRESHOLD = 10
 
 export const useDraggableData = createGlobalState(() => {
   const validElements = new WeakMap<RendererNode, DragItem<unknown>>()
-  const draggingItem = shallowRef<DragItem<unknown> | null>()
+  const draggingItem = shallowRef<DragItem<unknown> | null>(null)
   const isDragging = shallowRef(false)
 
   const pointer = useGlobalPointer()
@@ -319,7 +319,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
   }
 }
 
-type Filter = () => boolean | boolean
+type Filter = (() => boolean) | boolean
 export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef: MaybeRefOrGetter<HookParams<T>>, filters: {
   doRemoval?: Filter
   doMoving?: Filter
@@ -336,7 +336,7 @@ export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef
     if (!check(filters.doRemoval))
       return list
 
-    const arr = list
+    const arr = [...list]
     arr.splice(params.prevIdx, 1)
     return arr
   }
