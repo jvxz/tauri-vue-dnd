@@ -1,24 +1,19 @@
 <script lang="ts" setup>
-const list = shallowRef<DragData[]>([1, 2, 3, 4, 5, 6, 7])
+const list = ref<DragData[]>([1, 2, 3, 4, 5, 6, 7])
 
 const container = useTemplateRef('container')
 
-
 const { barStyles, getDragElementProps } = useDraggable(list, container, {
+  _name: 'test1',
   group: '1',
   onDragEnd: (params) => {
-    if (!params.targetIdx && params.targetIdx !== 0)
-      return
-
-    list.value = moveArrayMember(list.value, params.prevIdx, params.targetIdx)
-    console.log('params.targetIdx: ', params.targetIdx)
-    console.log('params.prevIdx: ', params.prevIdx)
+    list.value = handleListRearrange(list, params)
   },
 })
 </script>
 
 <template>
-  <div class="flex w-[100px] flex-col gap-1" ref="container">
+  <div ref="container" class="flex w-[100px] flex-col gap-1">
     <div
       v-if="barStyles"
       class="pointer-events-none absolute z-10 h-px w-full bg-red-500"

@@ -3,6 +3,7 @@ import type { RendererNode, StyleValue, VNodeProps } from 'vue'
 
 export type DragData = number
 export interface DragItem<T> {
+  _listId: string
   data: T
   element: Element
   group?: string
@@ -20,6 +21,7 @@ type Options<T> = Partial<{
   onDragEnd: (params: HookParams<T>) => void
   onDragOver: (params: HookParams<T>) => void
   group: string
+  _name: string
 }>
 
 const DRAG_UPDATE_THRESHOLD = 10
@@ -36,10 +38,25 @@ export const useDraggableData = createGlobalState(() => {
     y: pointer.y,
   })
 
+  const { on: onMouseRelease, trigger } = createEventHook()
+  const { pressed: isMouseDown } = useMousePressed({ onReleased: () => {
+    trigger()
+
+    queueMicrotask(() => {
+      draggingItem.value = null
+      isDragging.value = false
+    })
+  } })
+
   return {
+    /**
+     * the item that is being dragged
+     */
     draggingItem,
     hoveredElement,
     isDragging,
+    isMouseDown,
+    onMouseRelease,
     pauseElementByPointWatch,
     resumeElementByPointWatch,
     validElements,
@@ -51,14 +68,20 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     draggingItem,
     hoveredElement,
     isDragging,
+    isMouseDown,
+    onMouseRelease,
     pauseElementByPointWatch,
     resumeElementByPointWatch,
     validElements,
   } = useDraggableData()
+  const listId = useId()
   const pointer = useGlobalPointer()
 
   let barGap: string | null = null
 
+  /**
+   * the item that is being hovered
+   */
   const dropTargetItem = computed<DragItem<T> | null>((prev) => {
     const el = unrefElement(hoveredElement)
     if (!el)
@@ -71,23 +94,36 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     return item
   })
 
-  const { pressed: isMouseDown } = useMousePressed({
-    onReleased: () => {
-      pauseHoverWatch()
+  onMouseRelease(() => {
+    pauseHoverWatch()
+    barGap = null
 
-      if (
-        isDragging.value
-        && draggingItem.value
-        && dropTargetItem.value
-        && draggingItem.value?.group === options.group
-      ) {
-        options.onDragEnd?.(createHookParams())
-        draggingItem.value = null
-        isDragging.value = false
-      }
+    // console.log('_____________________group,', options.group)
+    // console.log('isDragging.value: ', isDragging.value)
+    // console.log('draggingItem.value: ', draggingItem.value)
+    // console.log('dropTargetItem.value: ', dropTargetItem.value)
+    // console.log('draggingItem.value?.group: ', draggingItem.value?.group)
+    // console.log('options.group: ', options.group)
+    // console.log('listId: ', listId)
+    // console.log('dropTargetItem.value._listId: ', dropTargetItem.value?._listId)
 
-      barGap = null
-    },
+    const draggedFromList = draggingItem.value?._listId === listId
+    const draggedToList = dropTargetItem.value?._listId === listId
+    const isFromSameGroup = draggingItem.value?.group === options.group || dropTargetItem.value?.group === options.group
+    // console.log('isDragging.value: ', isDragging.value, options._name)
+
+    if (
+      isDragging.value
+      && draggingItem.value
+      && dropTargetItem.value
+      && isFromSameGroup
+      && (draggedFromList || draggedToList)
+    ) {
+      options.onDragEnd?.(createHookParams())
+      // draggingItem.value = null
+    }
+
+    // isDragging.value = false
   })
 
   const { pause: pauseHoveredElementWatch, resume: resumeHoveredElementWatch } = watch(dropTargetItem, (currentItem) => {
@@ -136,6 +172,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     resumePointerWatch()
 
     potentialDraggingItem = {
+      _listId: listId,
       data,
       element,
       group: options.group,
@@ -214,22 +251,24 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
 
   const getDragElementProps = (data: T) => {
     const onVnodeMounted: VNodeProps['onVnodeMounted'] = e => e.el && e.el instanceof Element && validElements.set(e.el, {
+      _listId: listId,
       data,
       element: e.el,
       group: options.group,
     })
-    const onVnodeUnmounted: VNodeProps['onVnodeUnmounted'] = e => e.el && validElements.delete(e.el)
+    const onVnodeBeforeUnmount: VNodeProps['onVnodeBeforeUnmount'] = e => e.el && validElements.delete(e.el)
     const onPointerdown = (event: any) => handlePointerDown(data, event.target)
 
     return {
       onPointerdown,
+      onVnodeBeforeUnmount,
       onVnodeMounted,
-      onVnodeUnmounted,
     }
   }
 
   function createHookParams(): HookParams<T> {
     const targetItem = lookupElement(dropTargetItem.value?.element ?? null)
+    // console.log('targetItem: ', targetItem)
     if (!dropTargetItem.value || !targetItem) {
       throw new Error('Attempted to make hook params when targetItem was undefined')
     }
@@ -266,8 +305,34 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
   }
 }
 
+export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef: MaybeRefOrGetter<HookParams<T>>) {
+  const list = toValue(listRef)
+  const params = toValue(paramsRef)
+
+  if (!params.targetItem?.data || (!params.targetIdx && params.targetIdx !== 0))
+    return list
+
+  // handle moving to different list (remove)
+  if (params.targetIdx === -1) {
+    const arr = list
+    arr.splice(params.prevIdx, 1)
+    return arr
+  }
+
+  // handle recieving from different list (add at index)
+  if (params.prevIdx === -1) {
+    return insertAt(list, params.targetIdx, params.prevItem.data)
+  }
+
+  return moveArrayMember(list, params.prevIdx, params.targetIdx)
+}
+
 export function moveArrayMember<T>(arr: T[], from: number, to: number) {
   const clone: T[] = [...arr]
   Array.prototype.splice.call(clone, to, 0, Array.prototype.splice.call(clone, from, 1)[0])
   return clone
+}
+
+export function insertAt<T>(arr: T[], index: number, element: T): T[] {
+  return [...arr.slice(0, index), element, ...arr.slice(index)]
 }

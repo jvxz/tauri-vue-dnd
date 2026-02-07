@@ -1,15 +1,13 @@
 <script lang="ts" setup>
-const list = shallowRef<DragData[]>([8, 9, 10, 11, 12, 13, 14])
+const list = ref<DragData[]>([8, 9, 10, 11, 12, 13, 14])
 
 const container = useTemplateRef('container')
 
 const { barStyles, getDragElementProps } = useDraggable(list, container, {
+  _name: 'test2',
   group: '1',
   onDragEnd: (params) => {
-    if (!params.targetIdx && params.targetIdx !== 0)
-      return
-
-    list.value = moveArrayMember(list.value, params.prevIdx, params.targetIdx)
+    list.value = handleListRearrange(list, params)
   },
 })
 </script>
