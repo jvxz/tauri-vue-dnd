@@ -40,8 +40,10 @@ export const useDraggableData = createGlobalState(() => {
 
   const { on: onMouseRelease, trigger } = createEventHook()
   const { pressed: isMouseDown } = useMousePressed({ onReleased: () => {
-    trigger()
+    if (!isDragging.value)
+      return
 
+    trigger()
     queueMicrotask(() => {
       draggingItem.value = null
       isDragging.value = false
@@ -168,7 +170,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
 
   const inElementHalf = shallowRef<'bottom' | 'top' | null>()
   const barStyles = shallowRef<StyleValue | null>(null)
-  useRafFn(() => {
+  const { pause: pauseRafFn, resume: resumeRafFn } = useRafFn(() => {
     handleElementHalf()
     handleBar()
 
@@ -241,8 +243,19 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
         width: `${hoveredElementRect.width}px`,
       }
     }
+  }, {
+    immediate: false,
   })
-  // const barStyles = computed<StyleValue>((prev) => )
+
+  watch(isDragging, (v) => {
+    if (v) {
+      return resumeRafFn()
+    }
+    else {
+      pauseRafFn()
+      barStyles.value = null
+    }
+  })
 
   function pauseHoverWatch() {
     pauseElementByPointWatch()
