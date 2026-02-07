@@ -16,10 +16,11 @@ interface HookParams<T> {
   prevItem: DragItem<T>
 }
 
-type Options<T> = Partial<{
+export type DraggableOptions<T = unknown> = Partial<{
   onDragStart: (draggingItem: DragItem<T>) => void
   onDragEnd: (params: HookParams<T>) => void
   onDragOver: (params: HookParams<T>) => void
+  direction: 'vertical' | 'horizontal'
   group: string
   _name: string
 }>
@@ -65,7 +66,9 @@ export const useDraggableData = createGlobalState(() => {
   }
 })
 
-export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElementRef>, options: Options<T> = {}) {
+export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElementRef>, options = {
+  direction: 'vertical',
+} as MaybeRefOrGetter<DraggableOptions<T>>) {
   const {
     draggingItem,
     hoveredElement,
@@ -90,7 +93,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       return null
 
     const item = lookupElement(el)
-    if (!item || item.group !== options.group)
+    if (!item || item.group !== toValue(options).group)
       return prev ?? null
 
     return item
@@ -102,7 +105,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
 
     const draggedFromList = draggingItem.value?._listId === listId
     const draggedToList = dropTargetItem.value?._listId === listId
-    const isFromSameGroup = draggingItem.value?.group === options.group || dropTargetItem.value?.group === options.group
+    const isFromSameGroup = draggingItem.value?.group === toValue(options).group || dropTargetItem.value?.group === toValue(options).group
 
     if (
       isDragging.value
@@ -111,7 +114,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       && isFromSameGroup
       && (draggedFromList || draggedToList)
     ) {
-      options.onDragEnd?.(createHookParams())
+      toValue(options).onDragEnd?.(createHookParams())
     }
   })
 
@@ -119,8 +122,8 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     if (!currentItem || !lookupElement(currentItem.element))
       return
 
-    if (currentItem.group === options.group) {
-      options.onDragOver?.(createHookParams())
+    if (currentItem.group === toValue(options).group) {
+      toValue(options).onDragOver?.(createHookParams())
     }
   })
 
@@ -145,7 +148,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       isDragging.value = true
 
       draggingItem.value = potentialDraggingItem
-      options.onDragStart?.(potentialDraggingItem)
+      toValue(options).onDragStart?.(potentialDraggingItem)
 
       potentialDraggingItem = null
     }
@@ -164,11 +167,11 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       _listId: listId,
       data,
       element,
-      group: options.group,
+      group: toValue(options).group,
     }
   }
 
-  const inElementHalf = shallowRef<'bottom' | 'top' | null>()
+  const inElementHalf = shallowRef<'bottom/right' | 'top/left' | null>()
   const barStyles = shallowRef<StyleValue | null>(null)
   const { pause: pauseRafFn, resume: resumeRafFn } = useRafFn(() => {
     handleElementHalf()
@@ -179,10 +182,17 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       if (!hoveredElement)
         return inElementHalf.value = null
 
+      if (toValue(options).direction === 'horizontal') {
+        const hoveredElementRect = hoveredElement.getBoundingClientRect()
+        const relativePosition = pointer.x.value - hoveredElementRect.left
+
+        return inElementHalf.value = relativePosition > hoveredElementRect.width / 2 ? 'bottom/right' : 'top/left'
+      }
+
       const hoveredElementRect = hoveredElement.getBoundingClientRect()
       const relativePosition = pointer.y.value - hoveredElementRect.top
 
-      return inElementHalf.value = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
+      return inElementHalf.value = relativePosition > hoveredElementRect.height / 2 ? 'bottom/right' : 'top/left'
     }
 
     function handleBar() {
@@ -199,7 +209,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       if (
         draggingItem.value
         && draggingItem.value.group
-        && draggingItem.value.group !== options.group
+        && draggingItem.value.group !== toValue(options).group
       ) {
         return barStyles.value
       }
@@ -211,18 +221,46 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
         barGap = getComputedStyle(parentElement).gap
       }
 
-      const siblingElement = half === 'bottom'
+      const siblingElement = half === 'bottom/right'
         ? hoveredElement.nextElementSibling
         : hoveredElement.previousElementSibling
 
       const hoveredElementRect = hoveredElement.getBoundingClientRect()
 
       if (!siblingElement || !lookupElement(siblingElement)) {
-        const topValue = half === 'bottom'
-          ? (hoveredElementRect.height + hoveredElementRect.top)
-          : (hoveredElementRect.top)
+        if (toValue(options).direction === 'vertical') {
+          const topValue = half === 'bottom/right'
+            ? (hoveredElementRect.height + hoveredElementRect.top)
+            : (hoveredElementRect.top)
 
-        const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap} / 2)`
+          const top = `calc(${topValue}px ${half === 'bottom/right' ? '+' : '-'} ${barGap} / 2)`
+
+          return barStyles.value = {
+            top,
+            width: `${hoveredElementRect.width}px`,
+          }
+        }
+
+        const leftValue = half === 'bottom/right'
+          ? (hoveredElementRect.width + hoveredElementRect.left)
+          : (hoveredElementRect.left)
+
+        const left = `calc(${leftValue}px ${half === 'bottom/right' ? '+' : '-'} ${barGap} / 2)`
+
+        return barStyles.value = {
+          height: `${hoveredElementRect.height}px`,
+          left,
+        }
+      }
+
+      const siblingElementRect = siblingElement.getBoundingClientRect()
+
+      if (toValue(options).direction === 'vertical') {
+        const topValue = half === 'bottom/right'
+          ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
+          : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
+
+        const top = `${topValue}px`
 
         return barStyles.value = {
           top,
@@ -230,17 +268,15 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
         }
       }
 
-      const siblingElementRect = siblingElement.getBoundingClientRect()
+      const leftValue = half === 'bottom/right'
+        ? (hoveredElementRect.width + hoveredElementRect.left + siblingElementRect.left) / 2
+        : (siblingElementRect.width + siblingElementRect.left + hoveredElementRect.left) / 2
 
-      const topValue = half === 'bottom'
-        ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
-        : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
-
-      const top = `${topValue}px`
+      const left = `${leftValue}px`
 
       return barStyles.value = {
-        top,
-        width: `${hoveredElementRect.width}px`,
+        height: `${hoveredElementRect.height}px`,
+        left,
       }
     }
   }, {
@@ -272,7 +308,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       _listId: listId,
       data,
       element: e.el,
-      group: options.group,
+      group: toValue(options).group,
     })
     const onVnodeBeforeUnmount: VNodeProps['onVnodeBeforeUnmount'] = e => e.el && validElements.delete(e.el)
     const onPointerdown = (event: any) => handlePointerDown(data, event.target)
@@ -307,7 +343,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       }
     }
 
-    let insertionIdx = targetIdx + (inElementHalf.value === 'bottom' ? 1 : 0)
+    let insertionIdx = targetIdx + (inElementHalf.value === 'bottom/right' ? 1 : 0)
 
     if (prevIdx !== -1 && prevIdx < insertionIdx) {
       insertionIdx--
