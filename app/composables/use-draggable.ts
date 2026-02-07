@@ -402,7 +402,7 @@ export function handleListRearrange<T>(listRef: MaybeRefOrGetter<T[]>, paramsRef
   if (params.prevIdx === -1) {
     return check(filters.doAdding) ? insertAt(list, params.targetIdx, params.prevItem.data) : list
   }
-
+  
   return check(filters.doMoving) ? moveArrayMember(list, params.prevIdx, params.targetIdx) : list
 
   function check(f: Filter | undefined): boolean {
