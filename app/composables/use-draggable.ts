@@ -179,8 +179,19 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     }
   }
 
+  const inElementHalf = computed(() => {
+    const hoveredElement = dropTargetItem.value?.element
+    if (!hoveredElement)
+      return null
+
+    const hoveredElementRect = hoveredElement.getBoundingClientRect()
+    const relativePosition = pointer.y.value - hoveredElementRect.top
+
+    return relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
+  })
+
   const barStyles = computed<StyleValue>((prev) => {
-    if (!isDragging.value)
+    if (!isDragging.value || !inElementHalf.value)
       return null
 
     const hoveredElement = dropTargetItem.value?.element
@@ -198,10 +209,7 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       return prev
     }
 
-    const hoveredElementRect = hoveredElement.getBoundingClientRect()
-    const relativePosition = pointer.y.value - hoveredElementRect.top
-
-    const half = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
+    const half = inElementHalf.value
 
     const parentElement = hoveredElement.parentElement
     if (parentElement && !barGap) {
@@ -211,6 +219,8 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     const siblingElement = half === 'bottom'
       ? hoveredElement.nextElementSibling
       : hoveredElement.previousElementSibling
+
+    const hoveredElementRect = hoveredElement.getBoundingClientRect()
 
     if (!siblingElement || !lookupElement(siblingElement)) {
       const topValue = half === 'bottom'
@@ -268,7 +278,6 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
 
   function createHookParams(): HookParams<T> {
     const targetItem = lookupElement(dropTargetItem.value?.element ?? null)
-    // console.log('targetItem: ', targetItem)
     if (!dropTargetItem.value || !targetItem) {
       throw new Error('Attempted to make hook params when targetItem was undefined')
     }
@@ -278,10 +287,28 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
       throw new Error('Attempted to make hook params when prevItem was undefined')
     }
 
+    const targetIdx = list.value.indexOf(targetItem.data)
+    const prevIdx = list.value.indexOf(prevItem.data)
+
+    if (prevIdx === targetIdx) {
+      return {
+        prevIdx,
+        prevItem,
+        targetIdx: prevIdx,
+        targetItem,
+      }
+    }
+
+    let insertionIdx = targetIdx + (inElementHalf.value === 'bottom' ? 1 : 0)
+
+    if (prevIdx !== -1 && prevIdx < insertionIdx) {
+      insertionIdx--
+    }
+
     return {
-      prevIdx: list.value.indexOf(prevItem.data),
+      prevIdx,
       prevItem,
-      targetIdx: list.value.indexOf(targetItem.data),
+      targetIdx: Math.max(insertionIdx, 0),
       targetItem,
     }
   }
