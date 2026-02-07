@@ -166,75 +166,83 @@ export function useDraggable<T>(list: Ref<T[]>, container: MaybeRef<MaybeElement
     }
   }
 
-  const inElementHalf = computed(() => {
-    const hoveredElement = dropTargetItem.value?.element
-    if (!hoveredElement)
-      return null
+  const inElementHalf = shallowRef<'bottom' | 'top' | null>()
+  const barStyles = shallowRef<StyleValue | null>(null)
+  useRafFn(() => {
+    handleElementHalf()
+    handleBar()
 
-    const hoveredElementRect = hoveredElement.getBoundingClientRect()
-    const relativePosition = pointer.y.value - hoveredElementRect.top
+    function handleElementHalf() {
+      const hoveredElement = dropTargetItem.value?.element
+      if (!hoveredElement)
+        return inElementHalf.value = null
 
-    return relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
-  })
+      const hoveredElementRect = hoveredElement.getBoundingClientRect()
+      const relativePosition = pointer.y.value - hoveredElementRect.top
 
-  const barStyles = computed<StyleValue>((prev) => {
-    if (!isDragging.value || !inElementHalf.value)
-      return null
-
-    const hoveredElement = dropTargetItem.value?.element
-    if (!hoveredElement)
-      return null
-
-    if (!document.elementsFromPoint(pointer.x.value, pointer.y.value).includes(unrefElement(toValue(container))!))
-      return null
-
-    if (
-      draggingItem.value
-      && draggingItem.value.group
-      && draggingItem.value.group !== options.group
-    ) {
-      return prev
+      return inElementHalf.value = relativePosition > hoveredElementRect.height / 2 ? 'bottom' : 'top'
     }
 
-    const half = inElementHalf.value
+    function handleBar() {
+      if (!isDragging.value || !inElementHalf.value)
+        return barStyles.value = null
 
-    const parentElement = hoveredElement.parentElement
-    if (parentElement && !barGap) {
-      barGap = getComputedStyle(parentElement).gap
-    }
+      const hoveredElement = dropTargetItem.value?.element
+      if (!hoveredElement)
+        return barStyles.value = null
 
-    const siblingElement = half === 'bottom'
-      ? hoveredElement.nextElementSibling
-      : hoveredElement.previousElementSibling
+      if (!document.elementsFromPoint(pointer.x.value, pointer.y.value).includes(unrefElement(toValue(container))!))
+        return barStyles.value = null
 
-    const hoveredElementRect = hoveredElement.getBoundingClientRect()
+      if (
+        draggingItem.value
+        && draggingItem.value.group
+        && draggingItem.value.group !== options.group
+      ) {
+        return barStyles.value
+      }
 
-    if (!siblingElement || !lookupElement(siblingElement)) {
+      const half = inElementHalf.value
+
+      const parentElement = hoveredElement.parentElement
+      if (parentElement && !barGap) {
+        barGap = getComputedStyle(parentElement).gap
+      }
+
+      const siblingElement = half === 'bottom'
+        ? hoveredElement.nextElementSibling
+        : hoveredElement.previousElementSibling
+
+      const hoveredElementRect = hoveredElement.getBoundingClientRect()
+
+      if (!siblingElement || !lookupElement(siblingElement)) {
+        const topValue = half === 'bottom'
+          ? (hoveredElementRect.height + hoveredElementRect.top)
+          : (hoveredElementRect.top)
+
+        const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap} / 2)`
+
+        return barStyles.value = {
+          top,
+          width: `${hoveredElementRect.width}px`,
+        }
+      }
+
+      const siblingElementRect = siblingElement.getBoundingClientRect()
+
       const topValue = half === 'bottom'
-        ? (hoveredElementRect.height + hoveredElementRect.top)
-        : (hoveredElementRect.top)
+        ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
+        : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
 
-      const top = `calc(${topValue}px ${half === 'bottom' ? '+' : '-'} ${barGap} / 2)`
+      const top = `${topValue}px`
 
-      return {
+      return barStyles.value = {
         top,
         width: `${hoveredElementRect.width}px`,
       }
     }
-
-    const siblingElementRect = siblingElement.getBoundingClientRect()
-
-    const topValue = half === 'bottom'
-      ? (hoveredElementRect.height + hoveredElementRect.top + siblingElementRect.top) / 2
-      : (siblingElementRect.height + siblingElementRect.top + hoveredElementRect.top) / 2
-
-    const top = `${topValue}px`
-
-    return {
-      top,
-      width: `${hoveredElementRect.width}px`,
-    }
   })
+  // const barStyles = computed<StyleValue>((prev) => )
 
   function pauseHoverWatch() {
     pauseElementByPointWatch()
